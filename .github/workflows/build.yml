@@ -24,12 +24,61 @@ jobs:
         chmod +x gradlew
         ./gradlew wrapper --gradle-version 9.0 || true
 
-    - name: Build Genuine Integrated Jar
+    # 1. 🌟 모든 하위 서브모듈(paper, paper_26_2 등)의 코드를 누락 없이 전부 컴파일합니다.
+    - name: Compile All Submodules
       run: |
-        ./gradlew :mechanicscore-build:shadowJar --no-daemon || ./gradlew :build:shadowJar --no-daemon || ./gradlew :paper:assemble --no-daemon
+        ./gradlew compileJava assemble --no-daemon
 
-    - name: Upload All Built Jars
+    # 2. 🌟 분산된 하위 모듈 클래스들을 핵심 본체 MechanicsCore JAR 하나로 강제 병합(Shadow) 처리
+    - name: Merge Submodules into Main Jar
+      run: |
+        mkdir -p extracted_main extracted_sub
+        
+        # 메인 껍데기/코어 JAR 찾기
+        MAIN_JAR=$(find . -name "MechanicsCore-*.jar" ! -name "*-sources.jar" ! -name "*-javadoc.jar" | head -n 1)
+        echo "Found Main JAR: $MAIN_JAR"
+        
+        # 1.26.2 호환성 서브모듈(paper_26_2 또는 paper 관련) JAR 찾기
+        SUB_JARS=$(find . -name "*paper*.jar" -o -name "*26_2*.jar" ! -name "MechanicsCore-*.jar")
+        
+        if [ -f "$MAIN_JAR" ]; then
+          cd extracted_main
+          jar -xf "../$MAIN_JAR"
+          cd ..
+          
+          # 발견된 모든 서브모듈 파일의 클래스를 추출하여 메인 구조에 주입
+          for sub in $SUB_JARS; do
+            echo "Merging sub-module: $sub"
+            cd extracted_sub
+            jar -xf "../$sub"
+            # 클래스 및 리소스 복사 (META-INF는 제외하여 충돌 방지)
+            rsync -av --exclude='META-INF/' . ../extracted_main/
+            rm -rf *
+            cd ..
+          done
+          
+          # 하나의 완성된 Fat JAR로 다시 압축
+          cd extracted_main
+          jar -cf ../MechanicsCore-Integrated.jar .
+          cd ..
+          
+          # 배포 경로로 이동
+          mkdir -p final_output
+          mv MechanicsCore-Integrated.jar final_output/
+          
+          # WeaponMechanics 본체도 있으면 같이 챙기기
+          WM_JAR=$(find . -name "WeaponMechanics-*.jar" ! -name "*-sources.jar" ! -name "*-javadoc.jar" | head -n 1)
+          if [ -f "$WM_JAR" ]; then
+            cp "$WM_JAR" final_output/
+          fi
+        else
+          echo "Main JAR not found! Check compilation."
+          exit 1
+        fi
+
+    # 3. 🌟 완벽하게 하나로 뭉쳐진 최종 결과물 파일만 업로드
+    - name: Upload Integrated Jar
       uses: actions/upload-artifact@v4
       with:
-        name: Built-PR-Jars
-        path: "**/build/libs/*.jar"
+        name: MechanicsCore-1.26.2-Bundle
+        path: "final_output/*.jar"
