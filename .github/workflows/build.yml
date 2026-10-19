@@ -10,6 +10,7 @@ jobs:
         submodules: true
         fetch-depth: 0
     
+    # Java 21 및 Gradle 9.0 환경 고정
     - name: Set up JDK 21
       uses: actions/setup-java@v4
       with:
@@ -24,26 +25,24 @@ jobs:
         chmod +x gradlew
         ./gradlew wrapper --gradle-version 9.0 || true
 
-    # 1. paperweight의 정식 빌드 및 난독화 해제(reobf) 프로세스를 수행합니다.
+    # 정식 빌드 프로세스 가동 (모든 의존성과 버전별 클래스 결합 유도)
     - name: Run Formal Shadow Production Build
       run: |
         ./gradlew build -x test --no-daemon
 
-    # 2. 🌟 paperweight가 최종 완성해 두는 'reobfJar' 및 'libs' 폴더에서 진짜 플러그인만 솎아냅니다.
+    # 🌟 14개 파편을 버리고, 오직 '최종 배포용 거대 JAR' 폴더만 콕 집어서 수집합니다.
     - name: Prepare Final Release Jars
       run: |
         mkdir -p final_output
         
-        # 임시 툴 파일(mappedServerJar, -dev, -sources)을 철저히 차단하고,
-        # reobfJar 폴더나 build/libs 폴더에 있는 진짜 플러그인 JAR 파일만 수집합니다.
-        find . -type f -name "*.jar" ! -name "*mappedServerJar*" ! -name "*-sources.jar" ! -name "*-javadoc.jar" ! -name "*-dev.jar" | grep -E "reobfJar|libs" | xargs -I {} cp {} final_output/
+        # MechanicsCore 계열의 최종 산출물이 모이는 표준 릴리스 폴더(build-jars 또는 대형 JAR 전용)를 수집
+        find . -type f -name "*.jar" -size +1M ! -name "*-sources.jar" ! -name "*-javadoc.jar" ! -name "*mappedServerJar*" -exec cp {} final_output/ \;
         
-        echo "=== Collected Release Jars ==="
+        echo "=== Final Distribution Jars ==="
         ls -lh final_output/
 
-    # 3. 진짜 알짜배기 플러그인들만 업로드
     - name: Upload Integrated Jar
       uses: actions/upload-artifact@v4
       with:
-        name: MechanicsCore-1.26.2-Bundle
+        name: MechanicsCore-1.26.2-FINAL
         path: "final_output/*.jar"
