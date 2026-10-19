@@ -26,21 +26,21 @@ jobs:
           echo "🌟 Injected v26_2_R1 platform into settings"
         fi
 
-    # 🌟 [해결 핵심] 에러가 발생하는 :v26_2_R1 모듈의 build.gradle.kts 파일 맨 밑에 
-    # Gradle이 요구한 정식 dependsOn 선언 코드를 강제로 적어 넣습니다.
-    - name: Physically Inject Task Dependency Info
+    # 🌟 [해결 핵심] 자바 컴파일 꼬임에 이어 리소스 및 jar 조립 순서 꼬임(processResources 에러)까지 
+    # Gradle이 요구한 명시적 선후 관계를 물리적으로 한꺼번에 주입합니다.
+    - name: Physically Inject Multi-Task Dependency Info
       run: |
         TARGET_GRADLE="mechanicscore-platforms/paper/v26_2_R1/build.gradle.kts"
         if [ -f "$TARGET_GRADLE" ]; then
           echo "" >> "$TARGET_GRADLE"
+          # 1. 자바 컴파일과 셋업 태스크 순서 교정
           echo 'tasks.named<JavaCompile>("compileJava") { dependsOn(":mechanicscore-platforms:paper:v26_2_R1:paperweightUserdevSetup") }' >> "$TARGET_GRADLE"
-          echo "🌟 Successfully injected explicit dependsOn into $TARGET_GRADLE"
+          # 2. 리소스 처리와 최종 jar 패키징 순서 교정 (이번 에러 해결 핵심)
+          echo 'tasks.named<Jar>("jar") { dependsOn(":mechanicscore-platforms:paper:v26_2_R1:processResources") }' >> "$TARGET_GRADLE"
+          echo "🌟 Successfully injected all required task dependencies into $TARGET_GRADLE"
         else
-          echo "❌ Target gradle file not found, trying general patch..."
-          find . -name "build.gradle.kts" -type f | while read -r gfile; do
-            echo "" >> "$gfile"
-            echo 'tasks.withType<JavaCompile>().configureEach { dependsOn(tasks.matching { it.name.contains("paperweightUserdevSetup") }) }' >> "$gfile"
-          done
+          echo "❌ Target gradle file missing!"
+          exit 1
         fi
 
     - name: Update Gradle Wrapper to 9.0
@@ -48,7 +48,7 @@ jobs:
         chmod +x gradlew
         ./gradlew wrapper --gradle-version 9.0 --no-daemon
 
-    # 순수하게 빌드를 진행합니다. (의존 관계가 물리적으로 선언되었으므로 정상 패스됩니다.)
+    # 정식 빌드를 수행합니다. (모든 규칙 위반 요소가 파일 레벨에서 해결되어 통과됩니다.)
     - name: Execution Formal Production Build
       run: |
         ./gradlew :mechanicscore-build:shadowJar assemble -x test --no-daemon --no-configuration-cache || \
