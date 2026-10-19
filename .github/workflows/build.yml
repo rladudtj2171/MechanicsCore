@@ -19,33 +19,26 @@ jobs:
     - name: Setup Gradle
       uses: gradle/actions/setup-gradle@v4
 
-    # 1. 🌟 [핵심 해결] Gradle 9.0 태스크 의존성 꼬임(mappedServerJar 에러) 방지 패치 주입
-    - name: Patch Gradle Task Dependencies for Paperweight
+    # 1. 🌟 [핵심] 1.26.2 모듈을 프로젝트에 정식 가입시킵니다.
+    - name: Inject v26_2_R1 into Gradle Settings
       run: |
-        # 1.26.2 모듈을 settings.gradle.kts에 정식 포함시킵니다.
         if [ -f "settings.gradle.kts" ] && ! grep -q "v26_2_R1" settings.gradle.kts; then
           echo 'include(":mechanicscore-platforms:paper:v26_2_R1")' >> settings.gradle.kts
           echo "🌟 Injected v26_2_R1 platform into settings"
         fi
 
-        # 모든 build.gradle.kts 파일을 찾아서 compileJava가 paperweightSetup에 의존하도록 강제 지정을 심습니다.
-        find . -name "build.gradle.kts" -type f | while read -r gradle_file; do
-          echo "" >> "$gradle_file"
-          echo 'tasks.withType<JavaCompile>().configureEach { dependsOn(tasks.matching { it.name.contains("paperweight") || it.name.contains("Setup") }) }' >> "$gradle_file"
-        done
-        echo "🌟 Applied explicit paperweight task dependencies to all modules"
-
-    - name: Update Gradle Wrapper
+    # 2. 🌟 [가장 중요] paperweight 플러그인과 완벽하게 호환되는 Gradle 8.10 버전으로 래퍼 다운그레이드
+    - name: Update Gradle Wrapper to Stable 8.10
       run: |
         chmod +x gradlew
-        ./gradlew wrapper --gradle-version 9.0 || true
+        ./gradlew wrapper --gradle-version 8.10 --no-daemon
 
-    # 2. 패치된 명세를 바탕으로 정식 빌드를 수행합니다.
+    # 3. 🌟 정식 배포용 shadowJar와 assemble 태스크를 가동합니다. (의존성 누락 및 꼬임 차단)
     - name: Run Formal Shadow Production Build
       run: |
         ./gradlew :mechanicscore-build:shadowJar :WeaponMechanics:shadowJar assemble -x test --no-daemon || ./gradlew shadowJar assemble -x test --no-daemon
 
-    # 3. 내부 검사를 거쳐 plugin.yml이 담긴 진짜 최종 완성본 플러그인만 수집합니다.
+    # 4. 내부에 plugin.yml이 실존하는 '진짜 구동 가능한 플러그인 본체 JAR'만 엄격하게 검증하여 필터링합니다.
     - name: Filter and Collect Final Real Plugins
       run: |
         mkdir -p final_output
@@ -60,7 +53,7 @@ jobs:
         echo "=== Ultimate Output List ==="
         ls -lh final_output/
 
-    # 4. 최종 결과물 업로드
+    # 5. 검증 완료된 최종 순정본 파일만 업로드
     - name: Upload Verified Plugin
       uses: actions/upload-artifact@v4
       with:
