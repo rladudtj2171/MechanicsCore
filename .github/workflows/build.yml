@@ -10,22 +10,22 @@ jobs:
         submodules: true
         fetch-depth: 0
     
-    - name: Set up JDK 21
+    # 1. 🌟 플러그인이 요구하는 Java 17 버전으로 하향 조정
+    - name: Set up JDK 17
       uses: actions/setup-java@v4
       with:
-        java-version: '21'
+        java-version: '17' 
         distribution: 'temurin'
         
     - name: Setup Gradle
       uses: gradle/actions/setup-gradle@v4
 
+    # 2. 🌟 paperweight 2.0.0-beta.21 호환을 위해 Gradle 버전을 9.0으로 업그레이드
     - name: Update Gradle Wrapper
       run: |
         chmod +x gradlew
-        ./gradlew wrapper --gradle-version 8.11 || true
+        ./gradlew wrapper --gradle-version 9.0 || true
 
-    # 🌟 MechanicsCore 루트 기준에 맞춘 빌드 명령어로 수정
-    # 특정 프로젝트 명칭 대신 전체 shadowJar 또는 build를 시도하여 에러가 나는 컴파일만 건너뜁니다.
     - name: Build and Package Jars
       run: |
         ./gradlew shadowJar -x compileJava || ./gradlew assemble --no-daemon || ./gradlew build -x test -x compileJava
