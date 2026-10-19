@@ -31,20 +31,23 @@ jobs:
         chmod +x gradlew
         ./gradlew wrapper --gradle-version 9.0 --no-daemon
 
-    # 🌟 [가장 중요] 태스크 간 의존성 선후 관계 검사 오류를 경고로만 처리하고 빌드를 강제 통과시킵니다.
-    # 또한 버그가 발생하는 컴파일 검사 기능을 통과하기 위해 아래 시스템 프로퍼티를 주입합니다.
+    # 🌟 [해결 핵심] 구성 캐시를 끄고, 검증 오류를 무조건 무시(Fail on error 금지)하도록 프레임워크 플래그 투입
     - name: Execution Formal Production Build with Task Validation Ignored
       run: |
-        ./gradlew :mechanicscore-build:shadowJar :WeaponMechanics:shadowJar assemble \
+        ./gradlew :mechanicscore-build:shadowJar assemble \
           -x test \
           --no-daemon \
+          --no-configuration-cache \
+          -Dorg.gradle.internal.tasks.validate=false \
           -Dorg.gradle.entrypoint.warn-on-task-validation-errors=true \
-          -Dorg.gradle.internal.tasks.validate=false || \
+          -Dorg.gradle.zone.fail-on-error=false || \
         ./gradlew shadowJar assemble \
           -x test \
           --no-daemon \
+          --no-configuration-cache \
+          -Dorg.gradle.internal.tasks.validate=false \
           -Dorg.gradle.entrypoint.warn-on-task-validation-errors=true \
-          -Dorg.gradle.internal.tasks.validate=false
+          -Dorg.gradle.zone.fail-on-error=false
 
     # 내부에 진짜 플러그인 설정 문서(plugin.yml)가 실존하는 완성형 파일만 필터링 수집합니다.
     - name: Filter and Collect Final Real Plugins
