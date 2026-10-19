@@ -24,10 +24,10 @@ jobs:
         chmod +x gradlew
         ./gradlew wrapper --gradle-version 9.0 || true
 
-    # 🌟 무조건 코드를 컴파일하고 shadowJar(의존성 통합 파일)를 제대로 빌드하도록 수정
+    # 🌟 어떤 서브모듈에 shadowJar가 있는지 묻지 않고, 전체 모듈의 산출물을 컴파일하여 완전하게 조립합니다.
     - name: Build and Package Jars
       run: |
-        ./gradlew :MechanicsCore:shadowJar --no-daemon || ./gradlew :shadowJar --no-daemon || ./gradlew assemble --no-daemon
+        ./gradlew assemble --no-daemon
 
     - name: Upload All Built Jars
       uses: actions/upload-artifact@v4
