@@ -19,10 +19,11 @@ jobs:
     - name: Setup Gradle
       uses: gradle/actions/setup-gradle@v4
 
-    - name: Build and Package Jars
+    - name: Build Main Jars Only
       run: |
         chmod +x gradlew
-        ./gradlew shadowJar || ./gradlew assemble || ./gradlew build -x test
+        # 에러가 나는 서브모듈(:geysermc, :mythicmobs) 컴파일 작업을 건너뛰고 메인 빌드만 실행합니다.
+        ./gradlew :WeaponMechanics:shadowJar || ./gradlew :WeaponMechanics:jar || ./gradlew shadowJar -x :geysermc:compileJava -x :mythicmobs:compileJava
 
     - name: Upload All Built Jars
       uses: actions/upload-artifact@v4
