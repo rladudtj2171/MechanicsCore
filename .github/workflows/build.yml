@@ -26,28 +26,33 @@ jobs:
           echo "🌟 Injected v26_2_R1 platform into settings"
         fi
 
+    # 🌟 [해결 핵심] 에러가 발생하는 :v26_2_R1 모듈의 build.gradle.kts 파일 맨 밑에 
+    # Gradle이 요구한 정식 dependsOn 선언 코드를 강제로 적어 넣습니다.
+    - name: Physically Inject Task Dependency Info
+      run: |
+        TARGET_GRADLE="mechanicscore-platforms/paper/v26_2_R1/build.gradle.kts"
+        if [ -f "$TARGET_GRADLE" ]; then
+          echo "" >> "$TARGET_GRADLE"
+          echo 'tasks.named<JavaCompile>("compileJava") { dependsOn(":mechanicscore-platforms:paper:v26_2_R1:paperweightUserdevSetup") }' >> "$TARGET_GRADLE"
+          echo "🌟 Successfully injected explicit dependsOn into $TARGET_GRADLE"
+        else
+          echo "❌ Target gradle file not found, trying general patch..."
+          find . -name "build.gradle.kts" -type f | while read -r gfile; do
+            echo "" >> "$gfile"
+            echo 'tasks.withType<JavaCompile>().configureEach { dependsOn(tasks.matching { it.name.contains("paperweightUserdevSetup") }) }' >> "$gfile"
+          done
+        fi
+
     - name: Update Gradle Wrapper to 9.0
       run: |
         chmod +x gradlew
         ./gradlew wrapper --gradle-version 9.0 --no-daemon
 
-    # 🌟 [해결 핵심] 구성 캐시를 끄고, 검증 오류를 무조건 무시(Fail on error 금지)하도록 프레임워크 플래그 투입
-    - name: Execution Formal Production Build with Task Validation Ignored
+    # 순수하게 빌드를 진행합니다. (의존 관계가 물리적으로 선언되었으므로 정상 패스됩니다.)
+    - name: Execution Formal Production Build
       run: |
-        ./gradlew :mechanicscore-build:shadowJar assemble \
-          -x test \
-          --no-daemon \
-          --no-configuration-cache \
-          -Dorg.gradle.internal.tasks.validate=false \
-          -Dorg.gradle.entrypoint.warn-on-task-validation-errors=true \
-          -Dorg.gradle.zone.fail-on-error=false || \
-        ./gradlew shadowJar assemble \
-          -x test \
-          --no-daemon \
-          --no-configuration-cache \
-          -Dorg.gradle.internal.tasks.validate=false \
-          -Dorg.gradle.entrypoint.warn-on-task-validation-errors=true \
-          -Dorg.gradle.zone.fail-on-error=false
+        ./gradlew :mechanicscore-build:shadowJar assemble -x test --no-daemon --no-configuration-cache || \
+        ./gradlew shadowJar assemble -x test --no-daemon --no-configuration-cache
 
     # 내부에 진짜 플러그인 설정 문서(plugin.yml)가 실존하는 완성형 파일만 필터링 수집합니다.
     - name: Filter and Collect Final Real Plugins
