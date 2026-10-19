@@ -17,7 +17,7 @@ public class CompatibilitySetup {
      * @return the server version as string
      */
     public String getVersionAsString() {
-        return MinecraftVersions.getCurrent().toProtocolString();
+        return MinecraftVersions.getCurrent().toProtocolString().replace("-", "");
     }
 
     /**
