@@ -1,4 +1,4 @@
-name: Build Paper 26.2 Integrated Jar
+name: Build Paper 26.2 Perfect Auto-Merge
 on: [push, workflow_dispatch]
 
 jobs:
@@ -24,30 +24,57 @@ jobs:
         chmod +x gradlew
         ./gradlew wrapper --gradle-version 9.0 || true
 
-    # 1. 🌟 모호한 build 대신, 최종 통합본을 완성시키는 reobfJar와 shadowJar를 명시적으로 실행합니다.
-    - name: Run Dedicated Plugin Bundling
+    # 1. 모든 하위 모듈과 1.26.2 호환성 소스코드를 완벽하게 컴파일하여 조립합니다.
+    - name: Production Compile
       run: |
-        ./gradlew reobfJar shadowJar assemble -x test --no-daemon || ./gradlew assemble --no-daemon
+        ./gradlew compileJava assemble --no-daemon
 
-    # 2. 🌟 생성된 수많은 파일 중, 쓸데없는 임시 파일과 소스 파일을 제외한 모든 플러그인 후보를 수집합니다.
-    - name: Prepare Final Release Jars
+    # 2. 🌟 분산된 1.26.2 플랫폼 클래스들을 메인 코어 루트 패키지 경로에 강제 일치시킵니다.
+    - name: Force Injection of Compatibility Classes
       run: |
-        mkdir -p final_output
+        mkdir -p extracted_main extracted_sub final_output
         
-        # 특정 용량(+1M) 제한을 풀고, 빌드 및 배포 폴더 내부의 온전한 빌드본을 안전하게 수집합니다.
-        find . -type f -name "*.jar" \
-          ! -name "*mappedServerJar*" \
-          ! -name "*-sources.jar" \
-          ! -name "*-javadoc.jar" \
-          ! -name "*-dev.jar" \
-          -exec cp {} final_output/ \;
+        # 100KB 이상 크기의 실제 핵심 배포 파일 탐색
+        MAIN_JAR=$(find . -name "*.jar" -type f -size +500k ! -name "*-sources.jar" ! -name "*-javadoc.jar" | grep -i -E "MechanicsCore|build" | head -n 1)
+        # 방금 빌드된 1.26.2 버전 전용 플러그인 파편 JAR 탐색
+        SUB_JAR=$(find . -name "*v26_2_R1*.jar" -type f | head -n 1)
         
-        echo "=== Extracted Jars for Review ==="
-        ls -lh final_output/
+        echo "Main Target: $MAIN_JAR"
+        echo "Sub Patch Target: $SUB_JAR"
+        
+        if [ -f "$MAIN_JAR" ] && [ -f "$SUB_JAR" ]; then
+          cd extracted_main && jar -xf "../$MAIN_JAR" && cd ..
+          cd extracted_sub && jar -xf "../$SUB_JAR" && cd ..
+          
+          # 메인 코어가 탐색할 수 있도록 1.26.2 클래스 폴더 전체를 패키지 구조 그대로 강제 이식
+          rsync -av extracted_sub/ extracted_main/
+          
+          # META-INF 내부의 서비스 등록 파일 정보가 누락되지 않도록 결합 보장
+          if [ -d "extracted_sub/META-INF/services" ]; then
+            mkdir -p extracted_main/META-INF/services
+            cp -r extracted_sub/META-INF/services/* extracted_main/META-INF/services/ 2>/dev/null || true
+          fi
+          
+          # 일체형 통합 완제품 JAR로 재압축
+          cd extracted_main
+          jar -cf ../MechanicsCore-1.26.2-Ready.jar .
+          cd ..
+          
+          mv MechanicsCore-1.26.2-Ready.jar final_output/
+          
+          # 같이 구동해야 하는 WeaponMechanics 파일도 잊지 않고 수집
+          WM_JAR=$(find . -name "*WeaponMechanics*.jar" -type f -size +1M ! -name "*-sources.jar" ! -name "*-javadoc.jar" | head -n 1)
+          if [ -f "$WM_JAR" ]; then
+            cp "$WM_JAR" final_output/WeaponMechanics-Ready.jar
+          fi
+        else
+          echo "❌ Critical Error: Multi-module compilation output missing!"
+          exit 1
+        fi
 
-    # 3. 수집된 결과물 업로드
-    - name: Upload Integrated Jar
+    # 3. 완벽하게 패치된 일체형 플러그인만 아티팩트로 출력
+    - name: Upload Patched Plugin
       uses: actions/upload-artifact@v4
       with:
-        name: MechanicsCore-1.26.2-FINAL
+        name: MechanicsCore-1.26.2-Perfect
         path: "final_output/*.jar"
