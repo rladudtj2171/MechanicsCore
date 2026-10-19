@@ -26,18 +26,23 @@ jobs:
           echo "🌟 Injected v26_2_R1 platform into settings"
         fi
 
-    # 🌟 [해결 핵심] 자바 컴파일 꼬임에 이어 리소스 및 jar 조립 순서 꼬임(processResources 에러)까지 
-    # Gradle이 요구한 명시적 선후 관계를 물리적으로 한꺼번에 주입합니다.
-    - name: Physically Inject Multi-Task Dependency Info
+    # 🌟 [해결 핵심] 에러 메시지가 지적한 상호 모듈 이름 불일치 문제 해결을 위해 
+    # 양쪽 경로 명칭 모두에 대해 의존성(dependsOn) 선언문을 물리적으로 완전히 주입합니다.
+    - name: Physically Inject Multi-Module Cross Dependencies
       run: |
         TARGET_GRADLE="mechanicscore-platforms/paper/v26_2_R1/build.gradle.kts"
         if [ -f "$TARGET_GRADLE" ]; then
           echo "" >> "$TARGET_GRADLE"
-          # 1. 자바 컴파일과 셋업 태스크 순서 교정
+          
+          # 1. compileJava 단계가 두 형태의 paperweightSetup 태스크에 모두 의존하도록 묶어줍니다.
           echo 'tasks.named<JavaCompile>("compileJava") { dependsOn(":mechanicscore-platforms:paper:v26_2_R1:paperweightUserdevSetup") }' >> "$TARGET_GRADLE"
-          # 2. 리소스 처리와 최종 jar 패키징 순서 교정 (이번 에러 해결 핵심)
+          echo 'tasks.named<JavaCompile>("compileJava") { dependsOn(":v26_2_R1:paperweightUserdevSetup") }' >> "$TARGET_GRADLE"
+          
+          # 2. 리소스 처리와 jar 패키징 순서 꼬임도 함께 물리적으로 완벽히 고정합니다.
           echo 'tasks.named<Jar>("jar") { dependsOn(":mechanicscore-platforms:paper:v26_2_R1:processResources") }' >> "$TARGET_GRADLE"
-          echo "🌟 Successfully injected all required task dependencies into $TARGET_GRADLE"
+          echo 'tasks.named<Jar>("jar") { dependsOn(":v26_2_R1:processResources") }' >> "$TARGET_GRADLE"
+          
+          echo "🌟 Successfully injected all 4 cross dependencies into $TARGET_GRADLE"
         else
           echo "❌ Target gradle file missing!"
           exit 1
@@ -48,7 +53,7 @@ jobs:
         chmod +x gradlew
         ./gradlew wrapper --gradle-version 9.0 --no-daemon
 
-    # 정식 빌드를 수행합니다. (모든 규칙 위반 요소가 파일 레벨에서 해결되어 통과됩니다.)
+    # 정식 빌드를 수행합니다. (모든 규칙 위반 요소가 파일 레벨에서 강제 해결되어 성공합니다.)
     - name: Execution Formal Production Build
       run: |
         ./gradlew :mechanicscore-build:shadowJar assemble -x test --no-daemon --no-configuration-cache || \
