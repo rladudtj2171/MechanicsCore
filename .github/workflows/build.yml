@@ -19,33 +19,37 @@ jobs:
     - name: Setup Gradle
       uses: gradle/actions/setup-gradle@v4
 
-    # 1. 🌟 [핵심] 1.26.2 플랫폼 모듈이 루트 프로젝트의 빌드 파이프라인에 정식 포함되도록 강제 설정 주입
-    - name: Inject v26_2_R1 into Gradle Settings
+    # 1. 🌟 [핵심 해결] Gradle 9.0 태스크 의존성 꼬임(mappedServerJar 에러) 방지 패치 주입
+    - name: Patch Gradle Task Dependencies for Paperweight
       run: |
-        if [ -f "settings.gradle.kts" ]; then
-          # 설정 파일에 v26_2_R1 서브프로젝트가 누락되어 있다면 강제로 추가합니다.
-          if ! grep -q "v26_2_R1" settings.gradle.kts; then
-            echo 'include(":mechanicscore-platforms:paper:v26_2_R1")' >> settings.gradle.kts
-            echo "🌟 Injected v26_2_R1 platform into settings.gradle.kts"
-          fi
+        # 1.26.2 모듈을 settings.gradle.kts에 정식 포함시킵니다.
+        if [ -f "settings.gradle.kts" ] && ! grep -q "v26_2_R1" settings.gradle.kts; then
+          echo 'include(":mechanicscore-platforms:paper:v26_2_R1")' >> settings.gradle.kts
+          echo "🌟 Injected v26_2_R1 platform into settings"
         fi
+
+        # 모든 build.gradle.kts 파일을 찾아서 compileJava가 paperweightSetup에 의존하도록 강제 지정을 심습니다.
+        find . -name "build.gradle.kts" -type f | while read -r gradle_file; do
+          echo "" >> "$gradle_file"
+          echo 'tasks.withType<JavaCompile>().configureEach { dependsOn(tasks.matching { it.name.contains("paperweight") || it.name.contains("Setup") }) }' >> "$gradle_file"
+        done
+        echo "🌟 Applied explicit paperweight task dependencies to all modules"
 
     - name: Update Gradle Wrapper
       run: |
         chmod +x gradlew
         ./gradlew wrapper --gradle-version 9.0 || true
 
-    # 2. 🌟 인클루드된 1.26.2 모듈과 모든 의존성(CommandAPI 등)이 플러그인에 내장되도록 shadowJar 표준 빌드 수행
+    # 2. 패치된 명세를 바탕으로 정식 빌드를 수행합니다.
     - name: Run Formal Shadow Production Build
       run: |
         ./gradlew :mechanicscore-build:shadowJar :WeaponMechanics:shadowJar assemble -x test --no-daemon || ./gradlew shadowJar assemble -x test --no-daemon
 
-    # 3. 🌟 다른 파편을 일절 배제하고, 오직 'plugin.yml'이 들어있는 진짜 최종 배포용 FAT JAR만 명확하게 솎아냅니다.
+    # 3. 내부 검사를 거쳐 plugin.yml이 담긴 진짜 최종 완성본 플러그인만 수집합니다.
     - name: Filter and Collect Final Real Plugins
       run: |
         mkdir -p final_output
         
-        # 프로젝트 전체에서 생성된 JAR 중, 내부를 검사하여 'plugin.yml' 또는 'paper-plugin.yml'을 품고 있는 진짜 플러그인만 복사합니다.
         find . -type f -name "*.jar" ! -name "*mappedServerJar*" ! -name "*-sources.jar" ! -name "*-javadoc.jar" ! -name "*-dev.jar" | while read -r jar_file; do
           if jar tf "$jar_file" | grep -q -E "plugin.yml|paper-plugin.yml"; then
             echo "🎯 Verified Real Plugin Jar: $jar_file"
@@ -56,7 +60,7 @@ jobs:
         echo "=== Ultimate Output List ==="
         ls -lh final_output/
 
-    # 4. 검증 완료된 순정 통합본 업로드
+    # 4. 최종 결과물 업로드
     - name: Upload Verified Plugin
       uses: actions/upload-artifact@v4
       with:
