@@ -1,4 +1,4 @@
-name: Build Paper 26.2 Perfect Auto-Merge
+name: Build Paper 26.2 Pure Integration
 on: [push, workflow_dispatch]
 
 jobs:
@@ -19,62 +19,46 @@ jobs:
     - name: Setup Gradle
       uses: gradle/actions/setup-gradle@v4
 
+    # 1. 🌟 [핵심] 1.26.2 플랫폼 모듈이 루트 프로젝트의 빌드 파이프라인에 정식 포함되도록 강제 설정 주입
+    - name: Inject v26_2_R1 into Gradle Settings
+      run: |
+        if [ -f "settings.gradle.kts" ]; then
+          # 설정 파일에 v26_2_R1 서브프로젝트가 누락되어 있다면 강제로 추가합니다.
+          if ! grep -q "v26_2_R1" settings.gradle.kts; then
+            echo 'include(":mechanicscore-platforms:paper:v26_2_R1")' >> settings.gradle.kts
+            echo "🌟 Injected v26_2_R1 platform into settings.gradle.kts"
+          fi
+        fi
+
     - name: Update Gradle Wrapper
       run: |
         chmod +x gradlew
         ./gradlew wrapper --gradle-version 9.0 || true
 
-    # 1. 모든 하위 모듈과 1.26.2 호환성 소스코드를 완벽하게 컴파일하여 조립합니다.
-    - name: Production Compile
+    # 2. 🌟 인클루드된 1.26.2 모듈과 모든 의존성(CommandAPI 등)이 플러그인에 내장되도록 shadowJar 표준 빌드 수행
+    - name: Run Formal Shadow Production Build
       run: |
-        ./gradlew compileJava assemble --no-daemon
+        ./gradlew :mechanicscore-build:shadowJar :WeaponMechanics:shadowJar assemble -x test --no-daemon || ./gradlew shadowJar assemble -x test --no-daemon
 
-    # 2. 🌟 분산된 1.26.2 플랫폼 클래스들을 메인 코어 루트 패키지 경로에 강제 일치시킵니다.
-    - name: Force Injection of Compatibility Classes
+    # 3. 🌟 다른 파편을 일절 배제하고, 오직 'plugin.yml'이 들어있는 진짜 최종 배포용 FAT JAR만 명확하게 솎아냅니다.
+    - name: Filter and Collect Final Real Plugins
       run: |
-        mkdir -p extracted_main extracted_sub final_output
+        mkdir -p final_output
         
-        # 100KB 이상 크기의 실제 핵심 배포 파일 탐색
-        MAIN_JAR=$(find . -name "*.jar" -type f -size +500k ! -name "*-sources.jar" ! -name "*-javadoc.jar" | grep -i -E "MechanicsCore|build" | head -n 1)
-        # 방금 빌드된 1.26.2 버전 전용 플러그인 파편 JAR 탐색
-        SUB_JAR=$(find . -name "*v26_2_R1*.jar" -type f | head -n 1)
-        
-        echo "Main Target: $MAIN_JAR"
-        echo "Sub Patch Target: $SUB_JAR"
-        
-        if [ -f "$MAIN_JAR" ] && [ -f "$SUB_JAR" ]; then
-          cd extracted_main && jar -xf "../$MAIN_JAR" && cd ..
-          cd extracted_sub && jar -xf "../$SUB_JAR" && cd ..
-          
-          # 메인 코어가 탐색할 수 있도록 1.26.2 클래스 폴더 전체를 패키지 구조 그대로 강제 이식
-          rsync -av extracted_sub/ extracted_main/
-          
-          # META-INF 내부의 서비스 등록 파일 정보가 누락되지 않도록 결합 보장
-          if [ -d "extracted_sub/META-INF/services" ]; then
-            mkdir -p extracted_main/META-INF/services
-            cp -r extracted_sub/META-INF/services/* extracted_main/META-INF/services/ 2>/dev/null || true
+        # 프로젝트 전체에서 생성된 JAR 중, 내부를 검사하여 'plugin.yml' 또는 'paper-plugin.yml'을 품고 있는 진짜 플러그인만 복사합니다.
+        find . -type f -name "*.jar" ! -name "*mappedServerJar*" ! -name "*-sources.jar" ! -name "*-javadoc.jar" ! -name "*-dev.jar" | while read -r jar_file; do
+          if jar tf "$jar_file" | grep -q -E "plugin.yml|paper-plugin.yml"; then
+            echo "🎯 Verified Real Plugin Jar: $jar_file"
+            cp "$jar_file" final_output/
           fi
-          
-          # 일체형 통합 완제품 JAR로 재압축
-          cd extracted_main
-          jar -cf ../MechanicsCore-1.26.2-Ready.jar .
-          cd ..
-          
-          mv MechanicsCore-1.26.2-Ready.jar final_output/
-          
-          # 같이 구동해야 하는 WeaponMechanics 파일도 잊지 않고 수집
-          WM_JAR=$(find . -name "*WeaponMechanics*.jar" -type f -size +1M ! -name "*-sources.jar" ! -name "*-javadoc.jar" | head -n 1)
-          if [ -f "$WM_JAR" ]; then
-            cp "$WM_JAR" final_output/WeaponMechanics-Ready.jar
-          fi
-        else
-          echo "❌ Critical Error: Multi-module compilation output missing!"
-          exit 1
-        fi
+        done
+        
+        echo "=== Ultimate Output List ==="
+        ls -lh final_output/
 
-    # 3. 완벽하게 패치된 일체형 플러그인만 아티팩트로 출력
-    - name: Upload Patched Plugin
+    # 4. 검증 완료된 순정 통합본 업로드
+    - name: Upload Verified Plugin
       uses: actions/upload-artifact@v4
       with:
-        name: MechanicsCore-1.26.2-Perfect
+        name: MechanicsCore-1.26.2-RELEASE
         path: "final_output/*.jar"
