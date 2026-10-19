@@ -10,7 +10,6 @@ jobs:
         submodules: true
         fetch-depth: 0
     
-    # Java 21 및 Gradle 9.0 환경 고정
     - name: Set up JDK 21
       uses: actions/setup-java@v4
       with:
@@ -25,22 +24,28 @@ jobs:
         chmod +x gradlew
         ./gradlew wrapper --gradle-version 9.0 || true
 
-    # 정식 빌드 프로세스 가동 (모든 의존성과 버전별 클래스 결합 유도)
-    - name: Run Formal Shadow Production Build
+    # 1. 🌟 모호한 build 대신, 최종 통합본을 완성시키는 reobfJar와 shadowJar를 명시적으로 실행합니다.
+    - name: Run Dedicated Plugin Bundling
       run: |
-        ./gradlew build -x test --no-daemon
+        ./gradlew reobfJar shadowJar assemble -x test --no-daemon || ./gradlew assemble --no-daemon
 
-    # 🌟 14개 파편을 버리고, 오직 '최종 배포용 거대 JAR' 폴더만 콕 집어서 수집합니다.
+    # 2. 🌟 생성된 수많은 파일 중, 쓸데없는 임시 파일과 소스 파일을 제외한 모든 플러그인 후보를 수집합니다.
     - name: Prepare Final Release Jars
       run: |
         mkdir -p final_output
         
-        # MechanicsCore 계열의 최종 산출물이 모이는 표준 릴리스 폴더(build-jars 또는 대형 JAR 전용)를 수집
-        find . -type f -name "*.jar" -size +1M ! -name "*-sources.jar" ! -name "*-javadoc.jar" ! -name "*mappedServerJar*" -exec cp {} final_output/ \;
+        # 특정 용량(+1M) 제한을 풀고, 빌드 및 배포 폴더 내부의 온전한 빌드본을 안전하게 수집합니다.
+        find . -type f -name "*.jar" \
+          ! -name "*mappedServerJar*" \
+          ! -name "*-sources.jar" \
+          ! -name "*-javadoc.jar" \
+          ! -name "*-dev.jar" \
+          -exec cp {} final_output/ \;
         
-        echo "=== Final Distribution Jars ==="
+        echo "=== Extracted Jars for Review ==="
         ls -lh final_output/
 
+    # 3. 수집된 결과물 업로드
     - name: Upload Integrated Jar
       uses: actions/upload-artifact@v4
       with:
