@@ -2,8 +2,10 @@ name: Build Paper 26.2 Ultimate Fix
 on: [push, workflow_dispatch]
 
 jobs:
-  build:
+  build-and-release:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
     - uses: actions/checkout@v4
       with:
@@ -84,3 +86,11 @@ jobs:
       with:
         name: MechanicsCore-1.26.2-RELEASE
         path: "final_output/*.jar"
+    - name: Create GitHub Release and Upload JAR
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        gh release create ${{ github.ref_name }} \
+          final_output/*.jar \
+          --title "Release ${{ github.ref_name }}" \
+          --notes "Automated cloud release for version ${{ github.ref_name }}."
